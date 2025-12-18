@@ -13,6 +13,15 @@ public class M
 }
 
 $count = 0
+$delay = 400
+$parsedDelay = 0
+$delayInput = Read-Host "Enter delay in milliseconds between clicks (default 400)"
+
+if ([int]::TryParse($delayInput, [ref]$parsedDelay) -and $parsedDelay -gt 0) {
+    $delay = $parsedDelay
+}
+
+Write-Host "Using delay $delay ms"
 
 while ($true) {
     [M]::mouse_event(2,0,0,0,0)
@@ -21,5 +30,5 @@ while ($true) {
     $count++
     Write-Host ("Clicks: {0}" -f $count)
 
-    Start-Sleep -Milliseconds 400
+    Start-Sleep -Milliseconds $delay
 }
