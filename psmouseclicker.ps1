@@ -1,0 +1,1 @@
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class M{[DllImport("user32.dll")] public static extern void mouse_event(int a,int b,int c,int d,int e);}'; while ($true) { [M]::mouse_event(2,0,0,0,0); [M]::mouse_event(4,0,0,0,0); Start-Sleep -Milliseconds 500 }
