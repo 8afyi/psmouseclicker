@@ -39,6 +39,7 @@ Write-Host "Press ESC to stop" -ForegroundColor Yellow
 
 $spinner = @('|','/','-','\')
 $spinnerIndex = 0
+$rand = [Random]::new()
 
 while ($true) {
     [M]::mouse_event(2,0,0,0,0)
@@ -58,5 +59,8 @@ while ($true) {
         }
     }
 
-    Start-Sleep -Milliseconds $delay
+    $maxJitter = [math]::Floor($delay * 0.03)
+    $jitter = if ($maxJitter -gt 0) { $rand.Next(0, $maxJitter + 1) } else { 0 }
+    $effectiveDelay = $delay + $jitter
+    Start-Sleep -Milliseconds $effectiveDelay
 }
