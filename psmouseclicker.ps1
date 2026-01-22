@@ -15,13 +15,26 @@ public class M
 $count = 0
 $delay = 400
 $parsedDelay = 0
+$intro = @"
+      _._
+   .-'   `
+ __|__
+/     \
+|()_()|
+\{o o}/   Welcome to the PS Mouse Clicker
+ =\o/=
+  ^ ^
+
+"@
+Write-Host $intro -ForegroundColor Green
+
 $delayInput = Read-Host "Enter delay in milliseconds between clicks (default 400)"
 
 if ([int]::TryParse($delayInput, [ref]$parsedDelay) -and $parsedDelay -gt 0) {
     $delay = $parsedDelay
 }
 
-Write-Host "Using delay $delay ms"
+Write-Host "Using delay $delay ms" -ForegroundColor Black -BackgroundColor White
 Write-Host "Press ESC to stop" -ForegroundColor Yellow
 
 $spinner = @('|','/','-','\')
@@ -39,8 +52,8 @@ while ($true) {
     if ([Console]::KeyAvailable) {
         $key = [Console]::ReadKey($true)
         if ($key.Key -eq 'Escape') {
-            Write-Host "...  DONE!"
-            Write-Host "ESC pressed.  Exiting."
+            Write-Host "...  DONE!" -ForegroundColor Cyan
+            Write-Host "ESC pressed.  Exiting."  -ForegroundColor Black -BackgroundColor White
             break
         }
     }
