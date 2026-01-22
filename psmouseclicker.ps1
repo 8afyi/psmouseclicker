@@ -22,18 +22,25 @@ if ([int]::TryParse($delayInput, [ref]$parsedDelay) -and $parsedDelay -gt 0) {
 }
 
 Write-Host "Using delay $delay ms"
+Write-Host "Press ESC to stop" -ForegroundColor Yellow
+
+$spinner = @('|','/','-','\')
+$spinnerIndex = 0
 
 while ($true) {
     [M]::mouse_event(2,0,0,0,0)
     [M]::mouse_event(4,0,0,0,0)
 
     $count++
-    Write-Host ("[{0}] Clicks: {1}" -f (Get-Date -Format "HH:mm:ss:ffff"), $count)
+    $spinnerChar = $spinner[$spinnerIndex % $spinner.Length]
+    $spinnerIndex++
+    Write-Host ("`r[{0}] {1} Clicks: {2}" -f (Get-Date -Format "HH:mm:ss:ffff"), $spinnerChar, $count) -NoNewline -ForegroundColor Cyan
 
     if ([Console]::KeyAvailable) {
         $key = [Console]::ReadKey($true)
         if ($key.Key -eq 'Escape') {
-            Write-Host "ESC pressed. Exiting."
+            Write-Host "...  DONE!"
+            Write-Host "ESC pressed.  Exiting."
             break
         }
     }
