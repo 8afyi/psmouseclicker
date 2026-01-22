@@ -28,7 +28,15 @@ while ($true) {
     [M]::mouse_event(4,0,0,0,0)
 
     $count++
-    Write-Host ("Clicks: {0}" -f $count)
+    Write-Host ("[{0}] Clicks: {1}" -f (Get-Date -Format "HH:mm:ss:ffff"), $count)
+
+    if ([Console]::KeyAvailable) {
+        $key = [Console]::ReadKey($true)
+        if ($key.Key -eq 'Escape') {
+            Write-Host "ESC pressed. Exiting."
+            break
+        }
+    }
 
     Start-Sleep -Milliseconds $delay
 }
