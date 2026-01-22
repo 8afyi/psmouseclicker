@@ -40,27 +40,48 @@ Write-Host "Press ESC to stop" -ForegroundColor Yellow
 $spinner = @('|','/','-','\')
 $spinnerIndex = 0
 $rand = [Random]::new()
+$exitRequested = $false
 
-while ($true) {
+while (-not $exitRequested) {
     [M]::mouse_event(2,0,0,0,0)
     [M]::mouse_event(4,0,0,0,0)
 
     $count++
     $spinnerChar = $spinner[$spinnerIndex % $spinner.Length]
     $spinnerIndex++
-    Write-Host ("`r[{0}] {1} Clicks: {2}" -f (Get-Date -Format "HH:mm:ss:ffff"), $spinnerChar, $count) -NoNewline -ForegroundColor Cyan
+    $maxJitter = [math]::Floor($delay * 0.1)
+    $jitter = if ($maxJitter -gt 0) { $rand.Next(-$maxJitter, $maxJitter + 1) } else { 0 }
+    $effectiveDelay = [math]::Max(1, $delay + $jitter)
+
+    Write-Host ("`r[{0}] {1} Clicks: {2} | Delay: {3} ms" -f (Get-Date -Format "HH:mm:ss:ffff"), $spinnerChar, $count, $effectiveDelay) -NoNewline -ForegroundColor Cyan
 
     if ([Console]::KeyAvailable) {
         $key = [Console]::ReadKey($true)
         if ($key.Key -eq 'Escape') {
-            Write-Host "...  DONE!" -ForegroundColor Cyan
-            Write-Host "ESC pressed.  Exiting."  -ForegroundColor Black -BackgroundColor White
+            $exitRequested = $true
             break
         }
     }
 
-    $maxJitter = [math]::Floor($delay * 0.03)
-    $jitter = if ($maxJitter -gt 0) { $rand.Next(0, $maxJitter + 1) } else { 0 }
-    $effectiveDelay = $delay + $jitter
-    Start-Sleep -Milliseconds $effectiveDelay
+    $slept = 0
+    while ($slept -lt $effectiveDelay -and -not $exitRequested) {
+        $chunk = [math]::Min(50, $effectiveDelay - $slept)
+        Start-Sleep -Milliseconds $chunk
+        $slept += $chunk
+
+        if ([Console]::KeyAvailable) {
+            $key = [Console]::ReadKey($true)
+            if ($key.Key -eq 'Escape') {
+                $exitRequested = $true
+                break
+            }
+        }
+    }
+}
+
+if ($exitRequested) {
+    # Clear the status line before printing exit messages.
+    Write-Host ("`r" + (" " * 80)) -NoNewline
+    Write-Host ("`r...  DONE!") -ForegroundColor Cyan
+    Write-Host "ESC pressed.  Exiting."  -ForegroundColor Black -BackgroundColor White
 }
