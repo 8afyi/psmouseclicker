@@ -12,9 +12,7 @@ param(
     [Nullable[int]]$ClickLimit,
 
     [ValidateRange(0, 86400)]
-    [int]$IdleTimeoutSec = 0,
-
-    [switch]$NoConfirm
+    [int]$IdleTimeoutSec = 0
 )
 
 Set-StrictMode -Version Latest
@@ -225,33 +223,6 @@ function Read-ConsoleKey {
     return [pscustomobject]$result
 }
 
-function Confirm-ConsoleStart {
-    param(
-        [int]$DelayMs,
-        [bool]$UseJitter,
-        [int]$StartDelaySeconds,
-        [Nullable[int]]$DurationLimitSeconds,
-        [Nullable[int]]$ClickLimitValue,
-        [int]$IdleTimeoutSeconds,
-        [bool]$RequireConfirm
-    )
-
-    Write-Host "Settings:" -ForegroundColor White
-    Write-Host ("  Delay: {0} ms" -f $DelayMs) -ForegroundColor Gray
-    Write-Host ("  Jitter: {0}" -f ($(if ($UseJitter) { 'Enabled (+/-10%)' } else { 'Disabled' }))) -ForegroundColor Gray
-    Write-Host ("  Start delay: {0}s" -f $StartDelaySeconds) -ForegroundColor Gray
-    Write-Host ("  Duration limit: {0}" -f (Format-OptionalLimit -Value $DurationLimitSeconds)) -ForegroundColor Gray
-    Write-Host ("  Click limit: {0}" -f (Format-OptionalLimit -Value $ClickLimitValue)) -ForegroundColor Gray
-    Write-Host ("  Idle timeout: {0}" -f (Format-IdleLimit -Value $IdleTimeoutSeconds)) -ForegroundColor Gray
-
-    if (-not $RequireConfirm) {
-        return $true
-    }
-
-    $confirmation = Read-Host "Type START to begin clicking"
-    return ($confirmation -ceq 'START')
-}
-
 function Start-ConsoleClicker {
     param(
         [int]$InitialDelay,
@@ -259,8 +230,7 @@ function Start-ConsoleClicker {
         [int]$StartDelaySeconds,
         [Nullable[int]]$DurationLimitSeconds,
         [Nullable[int]]$ClickLimitValue,
-        [int]$IdleTimeoutSeconds,
-        [bool]$RequireConfirm
+        [int]$IdleTimeoutSeconds
     )
 
     $intro = @"
@@ -288,19 +258,13 @@ function Start-ConsoleClicker {
         Write-Host "ESC key detection is unavailable in this host." -ForegroundColor Yellow
     }
 
-    $confirmed = Confirm-ConsoleStart `
-        -DelayMs $delay `
-        -UseJitter $UseJitter `
-        -StartDelaySeconds $StartDelaySeconds `
-        -DurationLimitSeconds $DurationLimitSeconds `
-        -ClickLimitValue $ClickLimitValue `
-        -IdleTimeoutSeconds $IdleTimeoutSeconds `
-        -RequireConfirm $RequireConfirm
-
-    if (-not $confirmed) {
-        Write-Host "Start canceled." -ForegroundColor Yellow
-        return
-    }
+    Write-Host "Settings:" -ForegroundColor White
+    Write-Host ("  Delay: {0} ms" -f $delay) -ForegroundColor Gray
+    Write-Host ("  Jitter: {0}" -f ($(if ($UseJitter) { 'Enabled (+/-10%)' } else { 'Disabled' }))) -ForegroundColor Gray
+    Write-Host ("  Start delay: {0}s" -f $StartDelaySeconds) -ForegroundColor Gray
+    Write-Host ("  Duration limit: {0}" -f (Format-OptionalLimit -Value $DurationLimitSeconds)) -ForegroundColor Gray
+    Write-Host ("  Click limit: {0}" -f (Format-OptionalLimit -Value $ClickLimitValue)) -ForegroundColor Gray
+    Write-Host ("  Idle timeout: {0}" -f (Format-IdleLimit -Value $IdleTimeoutSeconds)) -ForegroundColor Gray
 
     $lastInteractionUtc = [DateTime]::UtcNow
     if ($StartDelaySeconds -gt 0) {
@@ -418,44 +382,6 @@ function Start-ConsoleClicker {
     Write-Host ("Total clicks: {0}" -f $count) -ForegroundColor Gray
 }
 
-function Confirm-GuiStart {
-    param(
-        $Owner,
-        [int]$DelayMs,
-        [bool]$UseJitter,
-        [int]$StartDelaySeconds,
-        [Nullable[int]]$DurationLimitSeconds,
-        [Nullable[int]]$ClickLimitValue,
-        [int]$IdleTimeoutSeconds,
-        [bool]$RequireConfirm
-    )
-
-    if (-not $RequireConfirm) {
-        return $true
-    }
-
-    $summary = @"
-Start clicking with these settings?
-
-Delay: $DelayMs ms
-Jitter: $(if ($UseJitter) { 'Enabled (+/-10%)' } else { 'Disabled' })
-Start delay: ${StartDelaySeconds}s
-Duration limit: $(Format-OptionalLimit -Value $DurationLimitSeconds)
-Click limit: $(Format-OptionalLimit -Value $ClickLimitValue)
-Idle timeout: $(Format-IdleLimit -Value $IdleTimeoutSeconds)
-"@
-
-    $result = [System.Windows.Forms.MessageBox]::Show(
-        $Owner,
-        $summary,
-        "Confirm Start",
-        [System.Windows.Forms.MessageBoxButtons]::YesNo,
-        [System.Windows.Forms.MessageBoxIcon]::Question
-    )
-
-    return ($result -eq [System.Windows.Forms.DialogResult]::Yes)
-}
-
 function Start-GuiClicker {
     param(
         [int]$InitialDelay,
@@ -463,8 +389,7 @@ function Start-GuiClicker {
         [int]$StartDelaySeconds,
         [Nullable[int]]$DurationLimitSeconds,
         [Nullable[int]]$ClickLimitValue,
-        [int]$IdleTimeoutSeconds,
-        [bool]$RequireConfirm
+        [int]$IdleTimeoutSeconds
     )
 
     Add-Type -AssemblyName System.Windows.Forms
@@ -636,22 +561,6 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
             return
         }
 
-        $baseDelay = [int]$delayInput.Value
-        $approved = Confirm-GuiStart `
-            -Owner $form `
-            -DelayMs $baseDelay `
-            -UseJitter $jitterCheckBox.Checked `
-            -StartDelaySeconds $StartDelaySeconds `
-            -DurationLimitSeconds $DurationLimitSeconds `
-            -ClickLimitValue $ClickLimitValue `
-            -IdleTimeoutSeconds $IdleTimeoutSeconds `
-            -RequireConfirm $RequireConfirm
-
-        if (-not $approved) {
-            $statusValue.Text = "Start canceled"
-            return
-        }
-
         $startButton.Enabled = $false
         $stopButton.Enabled = $true
         $delayInput.Enabled = $false
@@ -798,7 +707,6 @@ Initialize-ClickInputs
 
 $useJitter = -not $DisableJitter
 $initialDelay = Resolve-InitialDelay -DelayValue $Delay -PromptInConsole ($Mode -eq 'Console')
-$requireConfirm = -not $NoConfirm
 
 switch ($Mode) {
     'Console' {
@@ -808,8 +716,7 @@ switch ($Mode) {
             -StartDelaySeconds $StartDelaySec `
             -DurationLimitSeconds $DurationSec `
             -ClickLimitValue $ClickLimit `
-            -IdleTimeoutSeconds $IdleTimeoutSec `
-            -RequireConfirm $requireConfirm
+            -IdleTimeoutSeconds $IdleTimeoutSec
     }
     'Gui' {
         Start-GuiClicker `
@@ -818,7 +725,6 @@ switch ($Mode) {
             -StartDelaySeconds $StartDelaySec `
             -DurationLimitSeconds $DurationSec `
             -ClickLimitValue $ClickLimit `
-            -IdleTimeoutSeconds $IdleTimeoutSec `
-            -RequireConfirm $requireConfirm
+            -IdleTimeoutSeconds $IdleTimeoutSec
     }
 }
