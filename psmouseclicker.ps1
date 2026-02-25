@@ -12,10 +12,7 @@ param(
     [Nullable[int]]$ClickLimit,
 
     [ValidateRange(0, 86400)]
-    [int]$IdleTimeoutSec = 300,
-
-    [ValidateRange(1, 200)]
-    [double]$MaxCpsWarningCps = 15,
+    [int]$IdleTimeoutSec = 0,
 
     [switch]$NoConfirm
 )
@@ -96,7 +93,7 @@ function Initialize-ClickInputs {
 }
 
 function Invoke-LeftClick {
-    $inputSize = [Runtime.InteropServices.Marshal]::SizeOf([INPUT])
+    $inputSize = [Runtime.InteropServices.Marshal]::SizeOf([INPUT]::new())
     $sentCount = [NativeInput]::SendInput(2, $script:ClickInputs, $inputSize)
     if ($sentCount -ne 2) {
         $lastError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
@@ -191,11 +188,6 @@ function Format-IdleLimit {
     return "$Value s"
 }
 
-function Get-EstimatedCps {
-    param([int]$DelayMs)
-    return [math]::Round((1000.0 / [double][math]::Max(1, $DelayMs)), 2)
-}
-
 function Test-ConsoleKeySupport {
     try {
         [void][Console]::KeyAvailable
@@ -241,26 +233,16 @@ function Confirm-ConsoleStart {
         [Nullable[int]]$DurationLimitSeconds,
         [Nullable[int]]$ClickLimitValue,
         [int]$IdleTimeoutSeconds,
-        [double]$EstimatedCps,
-        [double]$MaxCpsWarningThreshold,
         [bool]$RequireConfirm
     )
 
     Write-Host "Settings:" -ForegroundColor White
-    Write-Host ("  Delay: {0} ms ({1} CPS estimated)" -f $DelayMs, $EstimatedCps) -ForegroundColor Gray
+    Write-Host ("  Delay: {0} ms" -f $DelayMs) -ForegroundColor Gray
     Write-Host ("  Jitter: {0}" -f ($(if ($UseJitter) { 'Enabled (+/-10%)' } else { 'Disabled' }))) -ForegroundColor Gray
     Write-Host ("  Start delay: {0}s" -f $StartDelaySeconds) -ForegroundColor Gray
     Write-Host ("  Duration limit: {0}" -f (Format-OptionalLimit -Value $DurationLimitSeconds)) -ForegroundColor Gray
     Write-Host ("  Click limit: {0}" -f (Format-OptionalLimit -Value $ClickLimitValue)) -ForegroundColor Gray
     Write-Host ("  Idle timeout: {0}" -f (Format-IdleLimit -Value $IdleTimeoutSeconds)) -ForegroundColor Gray
-
-    if ($EstimatedCps -gt $MaxCpsWarningThreshold) {
-        Write-Warning ("Requested click rate is {0} CPS, above warning threshold {1} CPS." -f $EstimatedCps, $MaxCpsWarningThreshold)
-        $fastAck = Read-Host "Type FAST to continue at this rate, or anything else to cancel"
-        if ($fastAck -cne 'FAST') {
-            return $false
-        }
-    }
 
     if (-not $RequireConfirm) {
         return $true
@@ -278,7 +260,6 @@ function Start-ConsoleClicker {
         [Nullable[int]]$DurationLimitSeconds,
         [Nullable[int]]$ClickLimitValue,
         [int]$IdleTimeoutSeconds,
-        [double]$MaxCpsWarningThreshold,
         [bool]$RequireConfirm
     )
 
@@ -301,7 +282,6 @@ function Start-ConsoleClicker {
     $spinnerIndex = 0
     $rand = [Random]::new()
     $canReadKeys = Test-ConsoleKeySupport
-    $estimatedCps = Get-EstimatedCps -DelayMs $delay
 
     Write-Host "Press ESC to stop (or Ctrl+C)." -ForegroundColor Yellow
     if (-not $canReadKeys) {
@@ -315,8 +295,6 @@ function Start-ConsoleClicker {
         -DurationLimitSeconds $DurationLimitSeconds `
         -ClickLimitValue $ClickLimitValue `
         -IdleTimeoutSeconds $IdleTimeoutSeconds `
-        -EstimatedCps $estimatedCps `
-        -MaxCpsWarningThreshold $MaxCpsWarningThreshold `
         -RequireConfirm $RequireConfirm
 
     if (-not $confirmed) {
@@ -449,30 +427,8 @@ function Confirm-GuiStart {
         [Nullable[int]]$DurationLimitSeconds,
         [Nullable[int]]$ClickLimitValue,
         [int]$IdleTimeoutSeconds,
-        [double]$MaxCpsWarningThreshold,
         [bool]$RequireConfirm
     )
-
-    $estimatedCps = Get-EstimatedCps -DelayMs $DelayMs
-    if ($estimatedCps -gt $MaxCpsWarningThreshold) {
-        $warningText = @"
-The requested click rate is $estimatedCps CPS.
-This exceeds the warning threshold of $MaxCpsWarningThreshold CPS.
-
-Continue anyway?
-"@
-        $rateResult = [System.Windows.Forms.MessageBox]::Show(
-            $Owner,
-            $warningText,
-            "High Click Rate Warning",
-            [System.Windows.Forms.MessageBoxButtons]::YesNo,
-            [System.Windows.Forms.MessageBoxIcon]::Warning
-        )
-
-        if ($rateResult -ne [System.Windows.Forms.DialogResult]::Yes) {
-            return $false
-        }
-    }
 
     if (-not $RequireConfirm) {
         return $true
@@ -508,7 +464,6 @@ function Start-GuiClicker {
         [Nullable[int]]$DurationLimitSeconds,
         [Nullable[int]]$ClickLimitValue,
         [int]$IdleTimeoutSeconds,
-        [double]$MaxCpsWarningThreshold,
         [bool]$RequireConfirm
     )
 
@@ -690,7 +645,6 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
             -DurationLimitSeconds $DurationLimitSeconds `
             -ClickLimitValue $ClickLimitValue `
             -IdleTimeoutSeconds $IdleTimeoutSeconds `
-            -MaxCpsWarningThreshold $MaxCpsWarningThreshold `
             -RequireConfirm $RequireConfirm
 
         if (-not $approved) {
@@ -855,7 +809,6 @@ switch ($Mode) {
             -DurationLimitSeconds $DurationSec `
             -ClickLimitValue $ClickLimit `
             -IdleTimeoutSeconds $IdleTimeoutSec `
-            -MaxCpsWarningThreshold $MaxCpsWarningCps `
             -RequireConfirm $requireConfirm
     }
     'Gui' {
@@ -866,7 +819,6 @@ switch ($Mode) {
             -DurationLimitSeconds $DurationSec `
             -ClickLimitValue $ClickLimit `
             -IdleTimeoutSeconds $IdleTimeoutSec `
-            -MaxCpsWarningThreshold $MaxCpsWarningCps `
             -RequireConfirm $requireConfirm
     }
 }
