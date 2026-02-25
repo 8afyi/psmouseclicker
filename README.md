@@ -2,12 +2,6 @@
 
 Windows auto-clicker script that can run in either console or GUI mode.
 
-## Requirements
-
-- Windows PowerShell 5.1 or PowerShell 7+
-- Windows desktop session
-- For GUI mode in `pwsh`, start with `-STA`
-
 ## Quick Start
 
 ```powershell
@@ -41,30 +35,29 @@ Windows auto-clicker script that can run in either console or GUI mode.
   - Stop when no user interaction with the clicker occurs for this many seconds.
   - Set to `0` to disable. Default: `0` (disabled).
 
-## Guardrails
-
-- Uses `SendInput` (not legacy `mouse_event`) for click injection.
-- Supports auto-stop limits:
-  - start delay
-  - duration
-  - click count
-  - idle timeout
-
 ## Examples
 
 ```powershell
 # Console: 250ms delay, no jitter
 .\psmouseclicker.ps1 -Mode Console -Delay 250 -DisableJitter
+```
 
+```powershell
 # GUI: start after 3 seconds, stop after 90 seconds
 .\psmouseclicker.ps1 -Mode Gui -Delay 150 -StartDelaySec 3 -DurationSec 90
+```
 
+```powershell
 # Console: run at most 1000 clicks
 .\psmouseclicker.ps1 -ClickLimit 1000
+```
 
+```powershell
 # GUI: disable idle timeout
 .\psmouseclicker.ps1 -Mode Gui -IdleTimeoutSec 0
+```
 
+```powershell
 # Console: enable 2-minute idle timeout
 .\psmouseclicker.ps1 -Delay 30 -IdleTimeoutSec 120
 ```
