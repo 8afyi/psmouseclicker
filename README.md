@@ -34,6 +34,9 @@ Windows auto-clicker script that can run in either console or GUI mode.
 - `-IdleTimeoutSec <int>`
   - Stop when no user interaction with the clicker occurs for this many seconds.
   - Set to `0` to disable. Default: `0` (disabled).
+- `-LifetimeClicksFile <string>`
+  - File used to persist lifetime click totals across runs.
+  - Default: `lifetime-clicks.txt` (stored next to the script by default).
 
 ## Examples
 
@@ -60,4 +63,9 @@ Windows auto-clicker script that can run in either console or GUI mode.
 ```powershell
 # Console: enable 2-minute idle timeout
 .\psmouseclicker.ps1 -Delay 30 -IdleTimeoutSec 120
+```
+
+```powershell
+# Console: store lifetime clicks in a custom file
+.\psmouseclicker.ps1 -LifetimeClicksFile C:\temp\psmouseclicker-lifetime.txt
 ```
