@@ -7,7 +7,9 @@ Windows auto-clicker script that can run in either console or GUI mode.
 ```powershell
 # Console mode (default)
 .\psmouseclicker.ps1
+```
 
+```powershell
 # GUI mode
 .\psmouseclicker.ps1 -Mode Gui
 ```
