@@ -12,7 +12,9 @@ param(
     [Nullable[int]]$ClickLimit,
 
     [ValidateRange(0, 86400)]
-    [int]$IdleTimeoutSec = 0
+    [int]$IdleTimeoutSec = 0,
+
+    [string]$LifetimeClicksFile = 'lifetime-clicks.txt'
 )
 
 Set-StrictMode -Version Latest
@@ -63,6 +65,9 @@ public static class NativeInput
 }
 
 $script:ClickInputs = $null
+$script:LifetimeClicks = 0L
+$script:LifetimeClicksDirty = $false
+$script:LifetimeClicksFilePath = $null
 
 function Initialize-ClickInputs {
     if ($null -ne $script:ClickInputs) {
@@ -186,6 +191,99 @@ function Format-IdleLimit {
     return "$Value s"
 }
 
+function Resolve-LifetimeClicksFilePath {
+    param([string]$PathValue)
+
+    if ([string]::IsNullOrWhiteSpace($PathValue)) {
+        throw "LifetimeClicksFile cannot be empty."
+    }
+
+    if ([System.IO.Path]::IsPathRooted($PathValue)) {
+        return [System.IO.Path]::GetFullPath($PathValue)
+    }
+
+    $basePath = if ([string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        (Get-Location).Path
+    }
+    else {
+        $PSScriptRoot
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path -Path $basePath -ChildPath $PathValue))
+}
+
+function Save-LifetimeClicks {
+    param(
+        [string]$FilePath,
+        [long]$Value
+    )
+
+    $directory = Split-Path -Path $FilePath -Parent
+    if (-not [string]::IsNullOrWhiteSpace($directory) -and -not (Test-Path -LiteralPath $directory -PathType Container)) {
+        [void](New-Item -ItemType Directory -Path $directory -Force)
+    }
+
+    Set-Content -LiteralPath $FilePath -Value $Value -Encoding Ascii
+}
+
+function Initialize-LifetimeClicks {
+    param([string]$FilePathValue)
+
+    $resolvedPath = Resolve-LifetimeClicksFilePath -PathValue $FilePathValue
+    $script:LifetimeClicksFilePath = $resolvedPath
+
+    if (-not (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
+        Save-LifetimeClicks -FilePath $resolvedPath -Value 0
+        $script:LifetimeClicks = 0
+        $script:LifetimeClicksDirty = $false
+        return
+    }
+
+    $rawValue = (Get-Content -LiteralPath $resolvedPath -Raw -ErrorAction Stop).Trim()
+    if ([string]::IsNullOrWhiteSpace($rawValue)) {
+        $script:LifetimeClicks = 0
+        Save-LifetimeClicks -FilePath $resolvedPath -Value $script:LifetimeClicks
+        $script:LifetimeClicksDirty = $false
+        return
+    }
+
+    $parsedValue = 0L
+    if (-not [long]::TryParse($rawValue, [ref]$parsedValue) -or $parsedValue -lt 0) {
+        throw "Lifetime click file '$resolvedPath' is invalid. Expected a non-negative integer."
+    }
+
+    $script:LifetimeClicks = $parsedValue
+    $script:LifetimeClicksDirty = $false
+}
+
+function Add-LifetimeClicks {
+    param(
+        [ValidateRange(1, 2147483647)]
+        [int]$Count = 1
+    )
+
+    $script:LifetimeClicks += [long]$Count
+    $script:LifetimeClicksDirty = $true
+}
+
+function Flush-LifetimeClicks {
+    if (-not $script:LifetimeClicksDirty) {
+        return
+    }
+
+    if ([string]::IsNullOrWhiteSpace($script:LifetimeClicksFilePath)) {
+        return
+    }
+
+    try {
+        Save-LifetimeClicks -FilePath $script:LifetimeClicksFilePath -Value $script:LifetimeClicks
+        $script:LifetimeClicksDirty = $false
+    }
+    catch {
+        Write-Warning ("Failed to persist lifetime clicks to '{0}': {1}" -f $script:LifetimeClicksFilePath, $_.Exception.Message)
+    }
+}
+
 function Test-ConsoleKeySupport {
     try {
         [void][Console]::KeyAvailable
@@ -265,6 +363,8 @@ function Start-ConsoleClicker {
     Write-Host ("  Duration limit: {0}" -f (Format-OptionalLimit -Value $DurationLimitSeconds)) -ForegroundColor Gray
     Write-Host ("  Click limit: {0}" -f (Format-OptionalLimit -Value $ClickLimitValue)) -ForegroundColor Gray
     Write-Host ("  Idle timeout: {0}" -f (Format-IdleLimit -Value $IdleTimeoutSeconds)) -ForegroundColor Gray
+    Write-Host ("  Lifetime clicks (before run): {0}" -f $script:LifetimeClicks) -ForegroundColor Gray
+    Write-Host ("  Lifetime file: {0}" -f $script:LifetimeClicksFilePath) -ForegroundColor DarkGray
 
     $lastInteractionUtc = [DateTime]::UtcNow
     if ($StartDelaySeconds -gt 0) {
@@ -295,77 +395,91 @@ function Start-ConsoleClicker {
 
     $runStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $stopReason = $null
+    $flushEveryClicks = 50
+    $clicksSinceFlush = 0
 
-    :MainLoop while ($true) {
-        if ($null -ne $DurationLimitSeconds -and $runStopwatch.Elapsed.TotalSeconds -ge $DurationLimitSeconds) {
-            $stopReason = "Duration limit reached ($DurationLimitSeconds s)"
-            break
-        }
-
-        if ($null -ne $ClickLimitValue -and $count -ge $ClickLimitValue) {
-            $stopReason = "Click limit reached ($ClickLimitValue)"
-            break
-        }
-
-        if ($IdleTimeoutSeconds -gt 0 -and ([DateTime]::UtcNow - $lastInteractionUtc).TotalSeconds -ge $IdleTimeoutSeconds) {
-            $stopReason = "Idle timeout reached ($IdleTimeoutSeconds s)"
-            break
-        }
-
-        Invoke-LeftClick
-        $count++
-
-        $effectiveDelay = Get-EffectiveDelay -BaseDelay $delay -UseJitter $UseJitter -Random $rand
-        $spinnerChar = $spinner[$spinnerIndex % $spinner.Length]
-        $spinnerIndex++
-
-        $statusParts = @(
-            ("Clicks: {0}" -f $count),
-            ("Delay: {0} ms" -f $effectiveDelay)
-        )
-
-        if ($null -ne $ClickLimitValue) {
-            $statusParts += ("Remaining clicks: {0}" -f [math]::Max(0, ($ClickLimitValue - $count)))
-        }
-
-        if ($null -ne $DurationLimitSeconds) {
-            $remainingSeconds = [math]::Max(0, [int][math]::Ceiling($DurationLimitSeconds - $runStopwatch.Elapsed.TotalSeconds))
-            $statusParts += ("Time left: {0}s" -f $remainingSeconds)
-        }
-
-        if ($IdleTimeoutSeconds -gt 0) {
-            $idleLeft = [math]::Max(0, [int][math]::Ceiling($IdleTimeoutSeconds - ([DateTime]::UtcNow - $lastInteractionUtc).TotalSeconds))
-            $statusParts += ("Idle left: {0}s" -f $idleLeft)
-        }
-
-        Write-Host ("`r[{0}] {1} {2}" -f (Get-Date -Format "HH:mm:ss.fff"), $spinnerChar, ($statusParts -join " | ")) -NoNewline -ForegroundColor Cyan
-
-        $slept = 0
-        while ($slept -lt $effectiveDelay) {
-            $chunk = [math]::Min(50, ($effectiveDelay - $slept))
-            Start-Sleep -Milliseconds $chunk
-            $slept += $chunk
-
-            $keyInfo = Read-ConsoleKey -CanReadKeys $canReadKeys
-            if ($keyInfo.Read) {
-                $lastInteractionUtc = [DateTime]::UtcNow
-            }
-
-            if ($keyInfo.Escape) {
-                $stopReason = "ESC pressed"
-                break MainLoop
-            }
-
+    try {
+        :MainLoop while ($true) {
             if ($null -ne $DurationLimitSeconds -and $runStopwatch.Elapsed.TotalSeconds -ge $DurationLimitSeconds) {
                 $stopReason = "Duration limit reached ($DurationLimitSeconds s)"
-                break MainLoop
+                break
+            }
+
+            if ($null -ne $ClickLimitValue -and $count -ge $ClickLimitValue) {
+                $stopReason = "Click limit reached ($ClickLimitValue)"
+                break
             }
 
             if ($IdleTimeoutSeconds -gt 0 -and ([DateTime]::UtcNow - $lastInteractionUtc).TotalSeconds -ge $IdleTimeoutSeconds) {
                 $stopReason = "Idle timeout reached ($IdleTimeoutSeconds s)"
-                break MainLoop
+                break
+            }
+
+            Invoke-LeftClick
+            $count++
+            Add-LifetimeClicks -Count 1
+            $clicksSinceFlush++
+            if ($clicksSinceFlush -ge $flushEveryClicks) {
+                Flush-LifetimeClicks
+                $clicksSinceFlush = 0
+            }
+
+            $effectiveDelay = Get-EffectiveDelay -BaseDelay $delay -UseJitter $UseJitter -Random $rand
+            $spinnerChar = $spinner[$spinnerIndex % $spinner.Length]
+            $spinnerIndex++
+
+            $statusParts = @(
+                ("Clicks: {0}" -f $count),
+                ("Lifetime: {0}" -f $script:LifetimeClicks),
+                ("Delay: {0} ms" -f $effectiveDelay)
+            )
+
+            if ($null -ne $ClickLimitValue) {
+                $statusParts += ("Remaining clicks: {0}" -f [math]::Max(0, ($ClickLimitValue - $count)))
+            }
+
+            if ($null -ne $DurationLimitSeconds) {
+                $remainingSeconds = [math]::Max(0, [int][math]::Ceiling($DurationLimitSeconds - $runStopwatch.Elapsed.TotalSeconds))
+                $statusParts += ("Time left: {0}s" -f $remainingSeconds)
+            }
+
+            if ($IdleTimeoutSeconds -gt 0) {
+                $idleLeft = [math]::Max(0, [int][math]::Ceiling($IdleTimeoutSeconds - ([DateTime]::UtcNow - $lastInteractionUtc).TotalSeconds))
+                $statusParts += ("Idle left: {0}s" -f $idleLeft)
+            }
+
+            Write-Host ("`r[{0}] {1} {2}" -f (Get-Date -Format "HH:mm:ss.fff"), $spinnerChar, ($statusParts -join " | ")) -NoNewline -ForegroundColor Cyan
+
+            $slept = 0
+            while ($slept -lt $effectiveDelay) {
+                $chunk = [math]::Min(50, ($effectiveDelay - $slept))
+                Start-Sleep -Milliseconds $chunk
+                $slept += $chunk
+
+                $keyInfo = Read-ConsoleKey -CanReadKeys $canReadKeys
+                if ($keyInfo.Read) {
+                    $lastInteractionUtc = [DateTime]::UtcNow
+                }
+
+                if ($keyInfo.Escape) {
+                    $stopReason = "ESC pressed"
+                    break MainLoop
+                }
+
+                if ($null -ne $DurationLimitSeconds -and $runStopwatch.Elapsed.TotalSeconds -ge $DurationLimitSeconds) {
+                    $stopReason = "Duration limit reached ($DurationLimitSeconds s)"
+                    break MainLoop
+                }
+
+                if ($IdleTimeoutSeconds -gt 0 -and ([DateTime]::UtcNow - $lastInteractionUtc).TotalSeconds -ge $IdleTimeoutSeconds) {
+                    $stopReason = "Idle timeout reached ($IdleTimeoutSeconds s)"
+                    break MainLoop
+                }
             }
         }
+    }
+    finally {
+        Flush-LifetimeClicks
     }
 
     $lineWidth = 80
@@ -380,6 +494,7 @@ function Start-ConsoleClicker {
     Write-Host ("`r... DONE!") -ForegroundColor Cyan
     Write-Host ("Reason: {0}" -f $stopReason) -ForegroundColor Black -BackgroundColor White
     Write-Host ("Total clicks: {0}" -f $count) -ForegroundColor Gray
+    Write-Host ("Lifetime clicks (all-time): {0}" -f $script:LifetimeClicks) -ForegroundColor Gray
 }
 
 function Start-GuiClicker {
@@ -408,6 +523,7 @@ function Start-GuiClicker {
         RunStartedUtc       = $null
         PendingStartUtc     = $null
         LastInteractionUtc  = [DateTime]::UtcNow
+        ClicksSinceFlush    = 0
     }
 
     $form = New-Object System.Windows.Forms.Form
@@ -416,12 +532,13 @@ function Start-GuiClicker {
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
     $form.MinimizeBox = $true
-    $form.ClientSize = New-Object System.Drawing.Size(460, 320)
+    $form.ClientSize = New-Object System.Drawing.Size(460, 350)
     $form.KeyPreview = $true
 
     $uiFont = New-Object System.Drawing.Font("Segoe UI", 10)
     $labelWidth = 160
     $valueX = 190
+    $flushEveryClicks = 50
 
     $delayLabel = New-Object System.Windows.Forms.Label
     $delayLabel.Text = "Delay between clicks:"
@@ -489,46 +606,58 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
     $clicksValue.Size = New-Object System.Drawing.Size(240, 24)
     $clicksValue.Font = $uiFont
 
+    $lifetimeLabel = New-Object System.Windows.Forms.Label
+    $lifetimeLabel.Text = "Lifetime clicks:"
+    $lifetimeLabel.Location = New-Object System.Drawing.Point(20, 196)
+    $lifetimeLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
+    $lifetimeLabel.Font = $uiFont
+
+    $lifetimeValue = New-Object System.Windows.Forms.Label
+    $lifetimeValue.Text = $script:LifetimeClicks.ToString()
+    $lifetimeValue.Location = New-Object System.Drawing.Point($valueX, 196)
+    $lifetimeValue.Size = New-Object System.Drawing.Size(240, 24)
+    $lifetimeValue.Font = $uiFont
+
     $currentDelayLabel = New-Object System.Windows.Forms.Label
     $currentDelayLabel.Text = "Current delay:"
-    $currentDelayLabel.Location = New-Object System.Drawing.Point(20, 196)
+    $currentDelayLabel.Location = New-Object System.Drawing.Point(20, 226)
     $currentDelayLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
     $currentDelayLabel.Font = $uiFont
 
     $currentDelayValue = New-Object System.Windows.Forms.Label
     $currentDelayValue.Text = "{0} ms" -f [int]$delayInput.Value
-    $currentDelayValue.Location = New-Object System.Drawing.Point($valueX, 196)
+    $currentDelayValue.Location = New-Object System.Drawing.Point($valueX, 226)
     $currentDelayValue.Size = New-Object System.Drawing.Size(240, 24)
     $currentDelayValue.Font = $uiFont
 
     $lastClickLabel = New-Object System.Windows.Forms.Label
     $lastClickLabel.Text = "Last click:"
-    $lastClickLabel.Location = New-Object System.Drawing.Point(20, 226)
+    $lastClickLabel.Location = New-Object System.Drawing.Point(20, 256)
     $lastClickLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
     $lastClickLabel.Font = $uiFont
 
     $lastClickValue = New-Object System.Windows.Forms.Label
     $lastClickValue.Text = "-"
-    $lastClickValue.Location = New-Object System.Drawing.Point($valueX, 226)
+    $lastClickValue.Location = New-Object System.Drawing.Point($valueX, 256)
     $lastClickValue.Size = New-Object System.Drawing.Size(240, 24)
     $lastClickValue.Font = $uiFont
 
     $startButton = New-Object System.Windows.Forms.Button
     $startButton.Text = "Start"
-    $startButton.Location = New-Object System.Drawing.Point(20, 272)
+    $startButton.Location = New-Object System.Drawing.Point(20, 302)
     $startButton.Size = New-Object System.Drawing.Size(130, 32)
     $startButton.Font = $uiFont
 
     $stopButton = New-Object System.Windows.Forms.Button
     $stopButton.Text = "Stop"
-    $stopButton.Location = New-Object System.Drawing.Point(165, 272)
+    $stopButton.Location = New-Object System.Drawing.Point(165, 302)
     $stopButton.Size = New-Object System.Drawing.Size(130, 32)
     $stopButton.Enabled = $false
     $stopButton.Font = $uiFont
 
     $resetButton = New-Object System.Windows.Forms.Button
     $resetButton.Text = "Reset Count"
-    $resetButton.Location = New-Object System.Drawing.Point(310, 272)
+    $resetButton.Location = New-Object System.Drawing.Point(310, 302)
     $resetButton.Size = New-Object System.Drawing.Size(130, 32)
     $resetButton.Font = $uiFont
 
@@ -552,6 +681,8 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
         $delayInput.Enabled = $true
         $jitterCheckBox.Enabled = $true
         $statusValue.Text = $Reason
+        Flush-LifetimeClicks
+        $state.ClicksSinceFlush = 0
     }
 
     $startButton.Add_Click({
@@ -642,6 +773,13 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
         Invoke-LeftClick
         $state.ClickCount++
         $clicksValue.Text = $state.ClickCount.ToString()
+        Add-LifetimeClicks -Count 1
+        $state.ClicksSinceFlush++
+        $lifetimeValue.Text = $script:LifetimeClicks.ToString()
+        if ($state.ClicksSinceFlush -ge $flushEveryClicks) {
+            Flush-LifetimeClicks
+            $state.ClicksSinceFlush = 0
+        }
 
         $baseDelay = [int]$delayInput.Value
         $effectiveDelay = Get-EffectiveDelay -BaseDelay $baseDelay -UseJitter $jitterCheckBox.Checked -Random $state.Random
@@ -672,6 +810,7 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
 
     $form.Add_FormClosing({
         $timer.Stop()
+        Flush-LifetimeClicks
         $timer.Dispose()
         $uiFont.Dispose()
     })
@@ -687,6 +826,8 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
             $statusValue,
             $clicksLabel,
             $clicksValue,
+            $lifetimeLabel,
+            $lifetimeValue,
             $currentDelayLabel,
             $currentDelayValue,
             $lastClickLabel,
@@ -704,27 +845,33 @@ Assert-OptionalPositiveInt -Name 'ClickLimit' -Value $ClickLimit
 
 Ensure-NativeInterop
 Initialize-ClickInputs
+Initialize-LifetimeClicks -FilePathValue $LifetimeClicksFile
 
 $useJitter = -not $DisableJitter
 $initialDelay = Resolve-InitialDelay -DelayValue $Delay -PromptInConsole ($Mode -eq 'Console')
 
-switch ($Mode) {
-    'Console' {
-        Start-ConsoleClicker `
-            -InitialDelay $initialDelay `
-            -UseJitter $useJitter `
-            -StartDelaySeconds $StartDelaySec `
-            -DurationLimitSeconds $DurationSec `
-            -ClickLimitValue $ClickLimit `
-            -IdleTimeoutSeconds $IdleTimeoutSec
+try {
+    switch ($Mode) {
+        'Console' {
+            Start-ConsoleClicker `
+                -InitialDelay $initialDelay `
+                -UseJitter $useJitter `
+                -StartDelaySeconds $StartDelaySec `
+                -DurationLimitSeconds $DurationSec `
+                -ClickLimitValue $ClickLimit `
+                -IdleTimeoutSeconds $IdleTimeoutSec
+        }
+        'Gui' {
+            Start-GuiClicker `
+                -InitialDelay $initialDelay `
+                -UseJitter $useJitter `
+                -StartDelaySeconds $StartDelaySec `
+                -DurationLimitSeconds $DurationSec `
+                -ClickLimitValue $ClickLimit `
+                -IdleTimeoutSeconds $IdleTimeoutSec
+        }
     }
-    'Gui' {
-        Start-GuiClicker `
-            -InitialDelay $initialDelay `
-            -UseJitter $useJitter `
-            -StartDelaySeconds $StartDelaySec `
-            -DurationLimitSeconds $DurationSec `
-            -ClickLimitValue $ClickLimit `
-            -IdleTimeoutSeconds $IdleTimeoutSec
-    }
+}
+finally {
+    Flush-LifetimeClicks
 }
