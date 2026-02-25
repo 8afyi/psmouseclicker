@@ -524,6 +524,10 @@ function Start-GuiClicker {
         PendingStartUtc     = $null
         LastInteractionUtc  = [DateTime]::UtcNow
         ClicksSinceFlush    = 0
+        StartDelaySeconds   = $StartDelaySeconds
+        DurationLimitSeconds = $DurationLimitSeconds
+        ClickLimitValue     = $ClickLimitValue
+        IdleTimeoutSeconds  = $IdleTimeoutSeconds
     }
 
     $form = New-Object System.Windows.Forms.Form
@@ -532,7 +536,7 @@ function Start-GuiClicker {
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
     $form.MinimizeBox = $true
-    $form.ClientSize = New-Object System.Drawing.Size(460, 350)
+    $form.ClientSize = New-Object System.Drawing.Size(620, 440)
     $form.KeyPreview = $true
 
     $uiFont = New-Object System.Drawing.Font("Segoe UI", 10)
@@ -567,97 +571,180 @@ function Start-GuiClicker {
     $jitterCheckBox.Checked = $UseJitter
     $jitterCheckBox.Font = $uiFont
 
-    $limitsLabel = New-Object System.Windows.Forms.Label
-    $limitsLabel.Text = "Run limits:"
-    $limitsLabel.Location = New-Object System.Drawing.Point(20, 84)
-    $limitsLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
-    $limitsLabel.Font = $uiFont
+    $startDelayLabel = New-Object System.Windows.Forms.Label
+    $startDelayLabel.Text = "Start delay:"
+    $startDelayLabel.Location = New-Object System.Drawing.Point(20, 84)
+    $startDelayLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
+    $startDelayLabel.Font = $uiFont
 
-    $limitsValue = New-Object System.Windows.Forms.Label
-    $limitsValue.Text = @"
-Start delay: ${StartDelaySeconds}s | Duration: $(Format-OptionalLimit -Value $DurationLimitSeconds)
-Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(Format-IdleLimit -Value $IdleTimeoutSeconds)
-"@
-    $limitsValue.Location = New-Object System.Drawing.Point($valueX, 82)
-    $limitsValue.Size = New-Object System.Drawing.Size(250, 46)
-    $limitsValue.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $startDelayInput = New-Object System.Windows.Forms.NumericUpDown
+    $startDelayInput.Location = New-Object System.Drawing.Point($valueX, 82)
+    $startDelayInput.Size = New-Object System.Drawing.Size(100, 24)
+    $startDelayInput.Minimum = 0
+    $startDelayInput.Maximum = 86400
+    $startDelayInput.Value = [decimal][math]::Min(86400, [math]::Max(0, $StartDelaySeconds))
+    $startDelayInput.Font = $uiFont
+
+    $startDelayUnits = New-Object System.Windows.Forms.Label
+    $startDelayUnits.Text = "sec"
+    $startDelayUnits.Location = New-Object System.Drawing.Point(300, 84)
+    $startDelayUnits.Size = New-Object System.Drawing.Size(50, 24)
+    $startDelayUnits.Font = $uiFont
+
+    $durationLabel = New-Object System.Windows.Forms.Label
+    $durationLabel.Text = "Duration limit:"
+    $durationLabel.Location = New-Object System.Drawing.Point(20, 114)
+    $durationLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
+    $durationLabel.Font = $uiFont
+
+    $durationInput = New-Object System.Windows.Forms.NumericUpDown
+    $durationInput.Location = New-Object System.Drawing.Point($valueX, 112)
+    $durationInput.Size = New-Object System.Drawing.Size(100, 24)
+    $durationInput.Minimum = 0
+    $durationInput.Maximum = 86400
+    $durationInput.Value = if ($null -ne $DurationLimitSeconds) { [decimal][math]::Min(86400, [math]::Max(1, $DurationLimitSeconds)) } else { [decimal]0 }
+    $durationInput.Font = $uiFont
+
+    $durationUnits = New-Object System.Windows.Forms.Label
+    $durationUnits.Text = "sec (0 = off)"
+    $durationUnits.Location = New-Object System.Drawing.Point(300, 114)
+    $durationUnits.Size = New-Object System.Drawing.Size(130, 24)
+    $durationUnits.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+
+    $clickLimitLabel = New-Object System.Windows.Forms.Label
+    $clickLimitLabel.Text = "Click limit:"
+    $clickLimitLabel.Location = New-Object System.Drawing.Point(20, 144)
+    $clickLimitLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
+    $clickLimitLabel.Font = $uiFont
+
+    $clickLimitInput = New-Object System.Windows.Forms.NumericUpDown
+    $clickLimitInput.Location = New-Object System.Drawing.Point($valueX, 142)
+    $clickLimitInput.Size = New-Object System.Drawing.Size(130, 24)
+    $clickLimitInput.Minimum = 0
+    $clickLimitInput.Maximum = [decimal]2000000000
+    $clickLimitInput.Value = if ($null -ne $ClickLimitValue) { [decimal][math]::Min(2000000000, [math]::Max(1, $ClickLimitValue)) } else { [decimal]0 }
+    $clickLimitInput.Font = $uiFont
+
+    $clickLimitHint = New-Object System.Windows.Forms.Label
+    $clickLimitHint.Text = "(0 = off)"
+    $clickLimitHint.Location = New-Object System.Drawing.Point(330, 144)
+    $clickLimitHint.Size = New-Object System.Drawing.Size(90, 24)
+    $clickLimitHint.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+
+    $idleTimeoutLabel = New-Object System.Windows.Forms.Label
+    $idleTimeoutLabel.Text = "Idle timeout:"
+    $idleTimeoutLabel.Location = New-Object System.Drawing.Point(20, 174)
+    $idleTimeoutLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
+    $idleTimeoutLabel.Font = $uiFont
+
+    $idleTimeoutInput = New-Object System.Windows.Forms.NumericUpDown
+    $idleTimeoutInput.Location = New-Object System.Drawing.Point($valueX, 172)
+    $idleTimeoutInput.Size = New-Object System.Drawing.Size(100, 24)
+    $idleTimeoutInput.Minimum = 0
+    $idleTimeoutInput.Maximum = 86400
+    $idleTimeoutInput.Value = [decimal][math]::Min(86400, [math]::Max(0, $IdleTimeoutSeconds))
+    $idleTimeoutInput.Font = $uiFont
+
+    $idleTimeoutUnits = New-Object System.Windows.Forms.Label
+    $idleTimeoutUnits.Text = "sec (0 = off)"
+    $idleTimeoutUnits.Location = New-Object System.Drawing.Point(300, 174)
+    $idleTimeoutUnits.Size = New-Object System.Drawing.Size(130, 24)
+    $idleTimeoutUnits.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+
+    $lifetimeFileLabel = New-Object System.Windows.Forms.Label
+    $lifetimeFileLabel.Text = "Lifetime file:"
+    $lifetimeFileLabel.Location = New-Object System.Drawing.Point(20, 204)
+    $lifetimeFileLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
+    $lifetimeFileLabel.Font = $uiFont
+
+    $lifetimeFileInput = New-Object System.Windows.Forms.TextBox
+    $lifetimeFileInput.Location = New-Object System.Drawing.Point($valueX, 202)
+    $lifetimeFileInput.Size = New-Object System.Drawing.Size(310, 24)
+    $lifetimeFileInput.Text = $script:LifetimeClicksFilePath
+    $lifetimeFileInput.Font = New-Object System.Drawing.Font("Consolas", 9)
+
+    $lifetimeBrowseButton = New-Object System.Windows.Forms.Button
+    $lifetimeBrowseButton.Text = "Browse..."
+    $lifetimeBrowseButton.Location = New-Object System.Drawing.Point(510, 201)
+    $lifetimeBrowseButton.Size = New-Object System.Drawing.Size(90, 26)
+    $lifetimeBrowseButton.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
     $statusLabel = New-Object System.Windows.Forms.Label
     $statusLabel.Text = "Status:"
-    $statusLabel.Location = New-Object System.Drawing.Point(20, 136)
+    $statusLabel.Location = New-Object System.Drawing.Point(20, 242)
     $statusLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
     $statusLabel.Font = $uiFont
 
     $statusValue = New-Object System.Windows.Forms.Label
     $statusValue.Text = "Stopped"
-    $statusValue.Location = New-Object System.Drawing.Point($valueX, 136)
-    $statusValue.Size = New-Object System.Drawing.Size(240, 24)
+    $statusValue.Location = New-Object System.Drawing.Point($valueX, 242)
+    $statusValue.Size = New-Object System.Drawing.Size(410, 24)
     $statusValue.Font = $uiFont
 
     $clicksLabel = New-Object System.Windows.Forms.Label
     $clicksLabel.Text = "Clicks:"
-    $clicksLabel.Location = New-Object System.Drawing.Point(20, 166)
+    $clicksLabel.Location = New-Object System.Drawing.Point(20, 272)
     $clicksLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
     $clicksLabel.Font = $uiFont
 
     $clicksValue = New-Object System.Windows.Forms.Label
     $clicksValue.Text = "0"
-    $clicksValue.Location = New-Object System.Drawing.Point($valueX, 166)
-    $clicksValue.Size = New-Object System.Drawing.Size(240, 24)
+    $clicksValue.Location = New-Object System.Drawing.Point($valueX, 272)
+    $clicksValue.Size = New-Object System.Drawing.Size(410, 24)
     $clicksValue.Font = $uiFont
 
     $lifetimeLabel = New-Object System.Windows.Forms.Label
     $lifetimeLabel.Text = "Lifetime clicks:"
-    $lifetimeLabel.Location = New-Object System.Drawing.Point(20, 196)
+    $lifetimeLabel.Location = New-Object System.Drawing.Point(20, 302)
     $lifetimeLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
     $lifetimeLabel.Font = $uiFont
 
     $lifetimeValue = New-Object System.Windows.Forms.Label
     $lifetimeValue.Text = $script:LifetimeClicks.ToString()
-    $lifetimeValue.Location = New-Object System.Drawing.Point($valueX, 196)
-    $lifetimeValue.Size = New-Object System.Drawing.Size(240, 24)
+    $lifetimeValue.Location = New-Object System.Drawing.Point($valueX, 302)
+    $lifetimeValue.Size = New-Object System.Drawing.Size(410, 24)
     $lifetimeValue.Font = $uiFont
 
     $currentDelayLabel = New-Object System.Windows.Forms.Label
     $currentDelayLabel.Text = "Current delay:"
-    $currentDelayLabel.Location = New-Object System.Drawing.Point(20, 226)
+    $currentDelayLabel.Location = New-Object System.Drawing.Point(20, 332)
     $currentDelayLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
     $currentDelayLabel.Font = $uiFont
 
     $currentDelayValue = New-Object System.Windows.Forms.Label
     $currentDelayValue.Text = "{0} ms" -f [int]$delayInput.Value
-    $currentDelayValue.Location = New-Object System.Drawing.Point($valueX, 226)
-    $currentDelayValue.Size = New-Object System.Drawing.Size(240, 24)
+    $currentDelayValue.Location = New-Object System.Drawing.Point($valueX, 332)
+    $currentDelayValue.Size = New-Object System.Drawing.Size(410, 24)
     $currentDelayValue.Font = $uiFont
 
     $lastClickLabel = New-Object System.Windows.Forms.Label
     $lastClickLabel.Text = "Last click:"
-    $lastClickLabel.Location = New-Object System.Drawing.Point(20, 256)
+    $lastClickLabel.Location = New-Object System.Drawing.Point(20, 362)
     $lastClickLabel.Size = New-Object System.Drawing.Size($labelWidth, 24)
     $lastClickLabel.Font = $uiFont
 
     $lastClickValue = New-Object System.Windows.Forms.Label
     $lastClickValue.Text = "-"
-    $lastClickValue.Location = New-Object System.Drawing.Point($valueX, 256)
-    $lastClickValue.Size = New-Object System.Drawing.Size(240, 24)
+    $lastClickValue.Location = New-Object System.Drawing.Point($valueX, 362)
+    $lastClickValue.Size = New-Object System.Drawing.Size(410, 24)
     $lastClickValue.Font = $uiFont
 
     $startButton = New-Object System.Windows.Forms.Button
     $startButton.Text = "Start"
-    $startButton.Location = New-Object System.Drawing.Point(20, 302)
+    $startButton.Location = New-Object System.Drawing.Point(20, 400)
     $startButton.Size = New-Object System.Drawing.Size(130, 32)
     $startButton.Font = $uiFont
 
     $stopButton = New-Object System.Windows.Forms.Button
     $stopButton.Text = "Stop"
-    $stopButton.Location = New-Object System.Drawing.Point(165, 302)
+    $stopButton.Location = New-Object System.Drawing.Point(165, 400)
     $stopButton.Size = New-Object System.Drawing.Size(130, 32)
     $stopButton.Enabled = $false
     $stopButton.Font = $uiFont
 
     $resetButton = New-Object System.Windows.Forms.Button
     $resetButton.Text = "Reset Count"
-    $resetButton.Location = New-Object System.Drawing.Point(310, 302)
+    $resetButton.Location = New-Object System.Drawing.Point(310, 400)
     $resetButton.Size = New-Object System.Drawing.Size(130, 32)
     $resetButton.Font = $uiFont
 
@@ -666,6 +753,23 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
 
     $touchInteraction = {
         $state.LastInteractionUtc = [DateTime]::UtcNow
+    }
+
+    $setConfigControlsEnabled = {
+        param([bool]$Enabled)
+
+        foreach ($control in @(
+                $delayInput,
+                $jitterCheckBox,
+                $startDelayInput,
+                $durationInput,
+                $clickLimitInput,
+                $idleTimeoutInput,
+                $lifetimeFileInput,
+                $lifetimeBrowseButton
+            )) {
+            $control.Enabled = $Enabled
+        }
     }
 
     $stopClicker = {
@@ -678,12 +782,26 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
 
         $startButton.Enabled = $true
         $stopButton.Enabled = $false
-        $delayInput.Enabled = $true
-        $jitterCheckBox.Enabled = $true
+        & $setConfigControlsEnabled $true
         $statusValue.Text = $Reason
         Flush-LifetimeClicks
         $state.ClicksSinceFlush = 0
     }
+
+    $lifetimeBrowseButton.Add_Click({
+        & $touchInteraction
+
+        $dialog = New-Object System.Windows.Forms.OpenFileDialog
+        $dialog.Title = "Select lifetime clicks file"
+        $dialog.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*"
+        $dialog.CheckFileExists = $false
+        $dialog.CheckPathExists = $true
+        $dialog.FileName = $lifetimeFileInput.Text
+
+        if ($dialog.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {
+            $lifetimeFileInput.Text = $dialog.FileName
+        }
+    })
 
     $startButton.Add_Click({
         & $touchInteraction
@@ -692,16 +810,67 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
             return
         }
 
+        $requestedLifetimeFile = $lifetimeFileInput.Text.Trim()
+        if ([string]::IsNullOrWhiteSpace($requestedLifetimeFile)) {
+            [void][System.Windows.Forms.MessageBox]::Show(
+                $form,
+                "Lifetime file path cannot be empty.",
+                "Invalid Lifetime File",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            )
+            return
+        }
+
+        try {
+            $resolvedLifetimePath = Resolve-LifetimeClicksFilePath -PathValue $requestedLifetimeFile
+        }
+        catch {
+            [void][System.Windows.Forms.MessageBox]::Show(
+                $form,
+                $_.Exception.Message,
+                "Invalid Lifetime File",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            )
+            return
+        }
+
+        if ($resolvedLifetimePath -ne $script:LifetimeClicksFilePath) {
+            try {
+                Flush-LifetimeClicks
+                Initialize-LifetimeClicks -FilePathValue $requestedLifetimeFile
+                $lifetimeValue.Text = $script:LifetimeClicks.ToString()
+                $lifetimeFileInput.Text = $script:LifetimeClicksFilePath
+            }
+            catch {
+                [void][System.Windows.Forms.MessageBox]::Show(
+                    $form,
+                    $_.Exception.Message,
+                    "Lifetime File Error",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Error
+                )
+                return
+            }
+        }
+
+        $state.StartDelaySeconds = [int]$startDelayInput.Value
+        $durationRaw = [int]$durationInput.Value
+        $state.DurationLimitSeconds = if ($durationRaw -gt 0) { [Nullable[int]]$durationRaw } else { $null }
+        $clickLimitRaw = [int]$clickLimitInput.Value
+        $state.ClickLimitValue = if ($clickLimitRaw -gt 0) { [Nullable[int]]$clickLimitRaw } else { $null }
+        $state.IdleTimeoutSeconds = [int]$idleTimeoutInput.Value
+
         $startButton.Enabled = $false
         $stopButton.Enabled = $true
-        $delayInput.Enabled = $false
-        $jitterCheckBox.Enabled = $false
+        & $setConfigControlsEnabled $false
         $state.LastInteractionUtc = [DateTime]::UtcNow
 
-        if ($StartDelaySeconds -gt 0) {
+        if ($state.StartDelaySeconds -gt 0) {
             $state.Phase = 'Countdown'
-            $state.PendingStartUtc = [DateTime]::UtcNow.AddSeconds($StartDelaySeconds)
-            $statusValue.Text = "Starting in ${StartDelaySeconds}s"
+            $state.PendingStartUtc = [DateTime]::UtcNow.AddSeconds($state.StartDelaySeconds)
+            $statusValue.Text = "Starting in $($state.StartDelaySeconds)s"
             $timer.Interval = 200
         }
         else {
@@ -732,12 +901,17 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
             $currentDelayValue.Text = "{0} ms" -f [int]$delayInput.Value
         }
     })
+    $startDelayInput.Add_ValueChanged({ & $touchInteraction })
+    $durationInput.Add_ValueChanged({ & $touchInteraction })
+    $clickLimitInput.Add_ValueChanged({ & $touchInteraction })
+    $idleTimeoutInput.Add_ValueChanged({ & $touchInteraction })
+    $lifetimeFileInput.Add_TextChanged({ & $touchInteraction })
 
     $timer.Add_Tick({
         $now = [DateTime]::UtcNow
 
-        if ($IdleTimeoutSeconds -gt 0 -and ($now - $state.LastInteractionUtc).TotalSeconds -ge $IdleTimeoutSeconds) {
-            & $stopClicker ("Idle timeout reached ({0}s)" -f $IdleTimeoutSeconds)
+        if ($state.IdleTimeoutSeconds -gt 0 -and ($now - $state.LastInteractionUtc).TotalSeconds -ge $state.IdleTimeoutSeconds) {
+            & $stopClicker ("Idle timeout reached ({0}s)" -f $state.IdleTimeoutSeconds)
             return
         }
 
@@ -760,13 +934,13 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
             return
         }
 
-        if ($null -ne $DurationLimitSeconds -and ($now - $state.RunStartedUtc).TotalSeconds -ge $DurationLimitSeconds) {
-            & $stopClicker ("Duration limit reached ({0}s)" -f $DurationLimitSeconds)
+        if ($null -ne $state.DurationLimitSeconds -and ($now - $state.RunStartedUtc).TotalSeconds -ge $state.DurationLimitSeconds) {
+            & $stopClicker ("Duration limit reached ({0}s)" -f $state.DurationLimitSeconds)
             return
         }
 
-        if ($null -ne $ClickLimitValue -and $state.ClickCount -ge $ClickLimitValue) {
-            & $stopClicker ("Click limit reached ({0})" -f $ClickLimitValue)
+        if ($null -ne $state.ClickLimitValue -and $state.ClickCount -ge $state.ClickLimitValue) {
+            & $stopClicker ("Click limit reached ({0})" -f $state.ClickLimitValue)
             return
         }
 
@@ -787,8 +961,8 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
         $lastClickValue.Text = Get-Date -Format "HH:mm:ss.fff"
         $timer.Interval = $effectiveDelay
 
-        if ($null -ne $ClickLimitValue -and $state.ClickCount -ge $ClickLimitValue) {
-            & $stopClicker ("Click limit reached ({0})" -f $ClickLimitValue)
+        if ($null -ne $state.ClickLimitValue -and $state.ClickCount -ge $state.ClickLimitValue) {
+            & $stopClicker ("Click limit reached ({0})" -f $state.ClickLimitValue)
         }
     })
 
@@ -802,7 +976,20 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
         }
     })
 
-    foreach ($control in @($form, $delayInput, $jitterCheckBox, $startButton, $stopButton, $resetButton)) {
+    foreach ($control in @(
+            $form,
+            $delayInput,
+            $jitterCheckBox,
+            $startDelayInput,
+            $durationInput,
+            $clickLimitInput,
+            $idleTimeoutInput,
+            $lifetimeFileInput,
+            $lifetimeBrowseButton,
+            $startButton,
+            $stopButton,
+            $resetButton
+        )) {
         $control.Add_MouseMove({
             & $touchInteraction
         })
@@ -820,8 +1007,21 @@ Click limit: $(Format-OptionalLimit -Value $ClickLimitValue) | Idle timeout: $(F
             $delayInput,
             $delayUnits,
             $jitterCheckBox,
-            $limitsLabel,
-            $limitsValue,
+            $startDelayLabel,
+            $startDelayInput,
+            $startDelayUnits,
+            $durationLabel,
+            $durationInput,
+            $durationUnits,
+            $clickLimitLabel,
+            $clickLimitInput,
+            $clickLimitHint,
+            $idleTimeoutLabel,
+            $idleTimeoutInput,
+            $idleTimeoutUnits,
+            $lifetimeFileLabel,
+            $lifetimeFileInput,
+            $lifetimeBrowseButton,
             $statusLabel,
             $statusValue,
             $clicksLabel,
