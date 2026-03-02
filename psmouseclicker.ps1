@@ -168,6 +168,25 @@ function Assert-OptionalPositiveInt {
     }
 }
 
+function Format-ClickCount {
+    param([long]$Value)
+
+    return $Value.ToString("N0")
+}
+
+function Format-OptionalClickCount {
+    param(
+        [Nullable[int]]$Value,
+        [string]$DisabledValue = 'None'
+    )
+
+    if ($null -eq $Value) {
+        return $DisabledValue
+    }
+
+    return (Format-ClickCount -Value ([long]$Value))
+}
+
 function Format-OptionalLimit {
     param(
         [Nullable[int]]$Value,
@@ -361,9 +380,9 @@ function Start-ConsoleClicker {
     Write-Host ("  Jitter: {0}" -f ($(if ($UseJitter) { 'Enabled (+/-10%)' } else { 'Disabled' }))) -ForegroundColor Gray
     Write-Host ("  Start delay: {0}s" -f $StartDelaySeconds) -ForegroundColor Gray
     Write-Host ("  Duration limit: {0}" -f (Format-OptionalLimit -Value $DurationLimitSeconds)) -ForegroundColor Gray
-    Write-Host ("  Click limit: {0}" -f (Format-OptionalLimit -Value $ClickLimitValue)) -ForegroundColor Gray
+    Write-Host ("  Click limit: {0}" -f (Format-OptionalClickCount -Value $ClickLimitValue)) -ForegroundColor Gray
     Write-Host ("  Idle timeout: {0}" -f (Format-IdleLimit -Value $IdleTimeoutSeconds)) -ForegroundColor Gray
-    Write-Host ("  Lifetime clicks (before run): {0}" -f $script:LifetimeClicks) -ForegroundColor Gray
+    Write-Host ("  Lifetime clicks (before run): {0}" -f (Format-ClickCount -Value $script:LifetimeClicks)) -ForegroundColor Gray
     Write-Host ("  Lifetime file: {0}" -f $script:LifetimeClicksFilePath) -ForegroundColor DarkGray
 
     $lastInteractionUtc = [DateTime]::UtcNow
@@ -406,7 +425,7 @@ function Start-ConsoleClicker {
             }
 
             if ($null -ne $ClickLimitValue -and $count -ge $ClickLimitValue) {
-                $stopReason = "Click limit reached ($ClickLimitValue)"
+                $stopReason = "Click limit reached ($(Format-ClickCount -Value $ClickLimitValue))"
                 break
             }
 
@@ -429,13 +448,13 @@ function Start-ConsoleClicker {
             $spinnerIndex++
 
             $statusParts = @(
-                ("Clicks: {0}" -f $count),
-                ("Lifetime: {0}" -f $script:LifetimeClicks),
+                ("Clicks: {0}" -f (Format-ClickCount -Value $count)),
+                ("Lifetime: {0}" -f (Format-ClickCount -Value $script:LifetimeClicks)),
                 ("Delay: {0} ms" -f $effectiveDelay)
             )
 
             if ($null -ne $ClickLimitValue) {
-                $statusParts += ("Remaining clicks: {0}" -f [math]::Max(0, ($ClickLimitValue - $count)))
+                $statusParts += ("Remaining clicks: {0}" -f (Format-ClickCount -Value ([math]::Max(0, ($ClickLimitValue - $count)))))
             }
 
             if ($null -ne $DurationLimitSeconds) {
@@ -493,8 +512,8 @@ function Start-ConsoleClicker {
     Write-Host ("`r" + (" " * $lineWidth)) -NoNewline
     Write-Host ("`r... DONE!") -ForegroundColor Cyan
     Write-Host ("Reason: {0}" -f $stopReason) -ForegroundColor Black -BackgroundColor White
-    Write-Host ("Total clicks: {0}" -f $count) -ForegroundColor Gray
-    Write-Host ("Lifetime clicks (all-time): {0}" -f $script:LifetimeClicks) -ForegroundColor Gray
+    Write-Host ("Total clicks: {0}" -f (Format-ClickCount -Value $count)) -ForegroundColor Gray
+    Write-Host ("Lifetime clicks (all-time): {0}" -f (Format-ClickCount -Value $script:LifetimeClicks)) -ForegroundColor Gray
 }
 
 function Start-GuiClicker {
@@ -700,7 +719,7 @@ function Start-GuiClicker {
     $lifetimeLabel.Font = $uiFont
 
     $lifetimeValue = New-Object System.Windows.Forms.Label
-    $lifetimeValue.Text = $script:LifetimeClicks.ToString()
+    $lifetimeValue.Text = Format-ClickCount -Value $script:LifetimeClicks
     $lifetimeValue.Location = New-Object System.Drawing.Point($valueX, 302)
     $lifetimeValue.Size = New-Object System.Drawing.Size(410, 24)
     $lifetimeValue.Font = $uiFont
@@ -840,7 +859,7 @@ function Start-GuiClicker {
             try {
                 Flush-LifetimeClicks
                 Initialize-LifetimeClicks -FilePathValue $requestedLifetimeFile
-                $lifetimeValue.Text = $script:LifetimeClicks.ToString()
+                $lifetimeValue.Text = Format-ClickCount -Value $script:LifetimeClicks
                 $lifetimeFileInput.Text = $script:LifetimeClicksFilePath
             }
             catch {
@@ -940,16 +959,16 @@ function Start-GuiClicker {
         }
 
         if ($null -ne $state.ClickLimitValue -and $state.ClickCount -ge $state.ClickLimitValue) {
-            & $stopClicker ("Click limit reached ({0})" -f $state.ClickLimitValue)
+            & $stopClicker ("Click limit reached ({0})" -f (Format-ClickCount -Value $state.ClickLimitValue))
             return
         }
 
         Invoke-LeftClick
         $state.ClickCount++
-        $clicksValue.Text = $state.ClickCount.ToString()
+        $clicksValue.Text = Format-ClickCount -Value $state.ClickCount
         Add-LifetimeClicks -Count 1
         $state.ClicksSinceFlush++
-        $lifetimeValue.Text = $script:LifetimeClicks.ToString()
+        $lifetimeValue.Text = Format-ClickCount -Value $script:LifetimeClicks
         if ($state.ClicksSinceFlush -ge $flushEveryClicks) {
             Flush-LifetimeClicks
             $state.ClicksSinceFlush = 0
@@ -962,7 +981,7 @@ function Start-GuiClicker {
         $timer.Interval = $effectiveDelay
 
         if ($null -ne $state.ClickLimitValue -and $state.ClickCount -ge $state.ClickLimitValue) {
-            & $stopClicker ("Click limit reached ({0})" -f $state.ClickLimitValue)
+            & $stopClicker ("Click limit reached ({0})" -f (Format-ClickCount -Value $state.ClickLimitValue))
         }
     })
 
