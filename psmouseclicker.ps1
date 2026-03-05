@@ -340,6 +340,30 @@ function Read-ConsoleKey {
     return [pscustomobject]$result
 }
 
+function Clear-ConsoleKeyBuffer {
+    param(
+        [bool]$CanReadKeys,
+        [int]$MaxReads = 256
+    )
+
+    if (-not $CanReadKeys) {
+        return 0
+    }
+
+    $cleared = 0
+    try {
+        while ($cleared -lt $MaxReads -and [Console]::KeyAvailable) {
+            [void][Console]::ReadKey($true)
+            $cleared++
+        }
+    }
+    catch {
+        return $cleared
+    }
+
+    return $cleared
+}
+
 function Start-ConsoleClicker {
     param(
         [int]$InitialDelay,
@@ -385,6 +409,7 @@ function Start-ConsoleClicker {
     Write-Host ("  Lifetime clicks (before run): {0}" -f (Format-ClickCount -Value $script:LifetimeClicks)) -ForegroundColor Gray
     Write-Host ("  Lifetime file: {0}" -f $script:LifetimeClicksFilePath) -ForegroundColor DarkGray
 
+    [void](Clear-ConsoleKeyBuffer -CanReadKeys $canReadKeys)
     $lastInteractionUtc = [DateTime]::UtcNow
     if ($StartDelaySeconds -gt 0) {
         for ($remaining = $StartDelaySeconds; $remaining -gt 0; $remaining--) {
@@ -412,6 +437,7 @@ function Start-ConsoleClicker {
         Write-Host ("`rStarting...") -ForegroundColor Green
     }
 
+    [void](Clear-ConsoleKeyBuffer -CanReadKeys $canReadKeys)
     $runStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $stopReason = $null
     $flushEveryClicks = 50
