@@ -364,6 +364,44 @@ function Clear-ConsoleKeyBuffer {
     return $cleared
 }
 
+function Get-ConsoleLineWidth {
+    param([int]$Fallback = 80)
+
+    try {
+        return [math]::Max(20, [Console]::WindowWidth - 1)
+    }
+    catch {
+        return [math]::Max(20, $Fallback)
+    }
+}
+
+function Write-ConsoleKvBlock {
+    param(
+        [string]$Title,
+        [object[]]$Items,
+        [ConsoleColor]$TitleColor = [ConsoleColor]::White,
+        [ConsoleColor]$ValueColor = [ConsoleColor]::Gray
+    )
+
+    if ($Items.Count -eq 0) {
+        return
+    }
+
+    $labelWidth = 0
+    foreach ($item in $Items) {
+        $labelText = [string]$item.Label
+        if ($labelText.Length -gt $labelWidth) {
+            $labelWidth = $labelText.Length
+        }
+    }
+
+    Write-Host $Title -ForegroundColor $TitleColor
+    foreach ($item in $Items) {
+        $labelText = ([string]$item.Label).PadRight($labelWidth)
+        Write-Host ("  {0} : {1}" -f $labelText, [string]$item.Value) -ForegroundColor $ValueColor
+    }
+}
+
 function Start-ConsoleClicker {
     param(
         [int]$InitialDelay,
@@ -385,7 +423,6 @@ function Start-ConsoleClicker {
   ^ ^
 
 "@
-    Write-Host $intro -ForegroundColor Green
 
     $delay = $InitialDelay
     $count = 0
@@ -393,21 +430,29 @@ function Start-ConsoleClicker {
     $spinnerIndex = 0
     $rand = [Random]::new()
     $canReadKeys = Test-ConsoleKeySupport
+    $lineWidth = Get-ConsoleLineWidth
 
-    Write-Host "Press ESC to stop (or Ctrl+C)." -ForegroundColor Yellow
+    Write-Host ("=" * $lineWidth) -ForegroundColor DarkCyan
+    Write-Host "PS Mouse Clicker" -ForegroundColor Green
+    Write-Host ("=" * $lineWidth) -ForegroundColor DarkCyan
+    Write-Host $intro -ForegroundColor Green
+
+    Write-Host "Controls: ESC to stop (or Ctrl+C)." -ForegroundColor Yellow
     if (-not $canReadKeys) {
         Write-Host "ESC key detection is unavailable in this host." -ForegroundColor Yellow
     }
 
-    Write-Host "Settings:" -ForegroundColor White
-    Write-Host ("  Delay: {0} ms" -f $delay) -ForegroundColor Gray
-    Write-Host ("  Jitter: {0}" -f ($(if ($UseJitter) { 'Enabled (+/-10%)' } else { 'Disabled' }))) -ForegroundColor Gray
-    Write-Host ("  Start delay: {0}s" -f $StartDelaySeconds) -ForegroundColor Gray
-    Write-Host ("  Duration limit: {0}" -f (Format-OptionalLimit -Value $DurationLimitSeconds)) -ForegroundColor Gray
-    Write-Host ("  Click limit: {0}" -f (Format-OptionalClickCount -Value $ClickLimitValue)) -ForegroundColor Gray
-    Write-Host ("  Idle timeout: {0}" -f (Format-IdleLimit -Value $IdleTimeoutSeconds)) -ForegroundColor Gray
-    Write-Host ("  Lifetime clicks (before run): {0}" -f (Format-ClickCount -Value $script:LifetimeClicks)) -ForegroundColor Gray
-    Write-Host ("  Lifetime file: {0}" -f $script:LifetimeClicksFilePath) -ForegroundColor DarkGray
+    Write-ConsoleKvBlock -Title "Run Settings" -TitleColor White -ValueColor Gray -Items @(
+        @{ Label = "Delay"; Value = ("{0} ms" -f $delay) }
+        @{ Label = "Jitter"; Value = $(if ($UseJitter) { 'Enabled (+/-10%)' } else { 'Disabled' }) }
+        @{ Label = "Start delay"; Value = ("{0}s" -f $StartDelaySeconds) }
+        @{ Label = "Duration limit"; Value = (Format-OptionalLimit -Value $DurationLimitSeconds) }
+        @{ Label = "Click limit"; Value = (Format-OptionalClickCount -Value $ClickLimitValue) }
+        @{ Label = "Idle timeout"; Value = (Format-IdleLimit -Value $IdleTimeoutSeconds) }
+        @{ Label = "Lifetime (before run)"; Value = (Format-ClickCount -Value $script:LifetimeClicks) }
+        @{ Label = "Lifetime file"; Value = $script:LifetimeClicksFilePath }
+    )
+    Write-Host ("-" * $lineWidth) -ForegroundColor DarkGray
 
     [void](Clear-ConsoleKeyBuffer -CanReadKeys $canReadKeys)
     $lastInteractionUtc = [DateTime]::UtcNow
@@ -428,12 +473,13 @@ function Start-ConsoleClicker {
                 if ($keyInfo.Escape) {
                     Write-Host ""
                     Write-Host "Canceled before start." -ForegroundColor Yellow
+                    Write-Host ("=" * $lineWidth) -ForegroundColor DarkCyan
                     return
                 }
             }
         }
 
-        Write-Host ("`r" + (" " * 90)) -NoNewline
+        Write-Host ("`r" + (" " * $lineWidth)) -NoNewline
         Write-Host ("`rStarting...") -ForegroundColor Green
     }
 
@@ -527,19 +573,15 @@ function Start-ConsoleClicker {
         Flush-LifetimeClicks
     }
 
-    $lineWidth = 80
-    try {
-        $lineWidth = [math]::Max(20, [Console]::WindowWidth - 1)
-    }
-    catch {
-        $lineWidth = 80
-    }
-
     Write-Host ("`r" + (" " * $lineWidth)) -NoNewline
-    Write-Host ("`r... DONE!") -ForegroundColor Cyan
-    Write-Host ("Reason: {0}" -f $stopReason) -ForegroundColor Black -BackgroundColor White
-    Write-Host ("Total clicks: {0}" -f (Format-ClickCount -Value $count)) -ForegroundColor Gray
-    Write-Host ("Lifetime clicks (all-time): {0}" -f (Format-ClickCount -Value $script:LifetimeClicks)) -ForegroundColor Gray
+    Write-Host ("`rRun Complete") -ForegroundColor Cyan
+    Write-Host ("-" * $lineWidth) -ForegroundColor DarkGray
+    Write-ConsoleKvBlock -Title "Summary" -TitleColor White -ValueColor Gray -Items @(
+        @{ Label = "Reason"; Value = $stopReason }
+        @{ Label = "Total clicks"; Value = (Format-ClickCount -Value $count) }
+        @{ Label = "Lifetime clicks (all-time)"; Value = (Format-ClickCount -Value $script:LifetimeClicks) }
+    )
+    Write-Host ("=" * $lineWidth) -ForegroundColor DarkCyan
 }
 
 function Start-GuiClicker {
