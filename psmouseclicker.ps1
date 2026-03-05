@@ -375,6 +375,38 @@ function Get-ConsoleLineWidth {
     }
 }
 
+function Convert-ToMirroredAscii {
+    param([string]$Text)
+
+    $mirrorMap = @{
+        '\' = '/'
+        '/' = '\'
+        '(' = ')'
+        ')' = '('
+        '[' = ']'
+        ']' = '['
+        '{' = '}'
+        '}' = '{'
+        '<' = '>'
+        '>' = '<'
+    }
+
+    $chars = $Text.ToCharArray()
+    [array]::Reverse($chars)
+    $builder = [System.Text.StringBuilder]::new()
+    foreach ($char in $chars) {
+        $key = [string]$char
+        if ($mirrorMap.ContainsKey($key)) {
+            [void]$builder.Append($mirrorMap[$key])
+        }
+        else {
+            [void]$builder.Append($char)
+        }
+    }
+
+    return $builder.ToString()
+}
+
 function Write-ConsoleKvBlock {
     param(
         [string]$Title,
@@ -428,6 +460,10 @@ function Start-ConsoleClicker {
     $count = 0
     $spinner = @('|', '/', '-', '\')
     $spinnerIndex = 0
+    $mouseStatusFrames = @(
+        '\{o o}/~~',
+        (Convert-ToMirroredAscii -Text '\{o o}/~~')
+    )
     $rand = [Random]::new()
     $canReadKeys = Test-ConsoleKeySupport
     $lineWidth = Get-ConsoleLineWidth
@@ -518,8 +554,10 @@ function Start-ConsoleClicker {
             $effectiveDelay = Get-EffectiveDelay -BaseDelay $delay -UseJitter $UseJitter -Random $rand
             $spinnerChar = $spinner[$spinnerIndex % $spinner.Length]
             $spinnerIndex++
+            $mouseStatus = $mouseStatusFrames[$count % $mouseStatusFrames.Length]
 
             $statusParts = @(
+                ("Mouse: {0}" -f $mouseStatus),
                 ("Clicks: {0}" -f (Format-ClickCount -Value $count)),
                 ("Lifetime: {0}" -f (Format-ClickCount -Value $script:LifetimeClicks)),
                 ("Delay: {0} ms" -f $effectiveDelay)
